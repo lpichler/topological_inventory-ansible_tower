@@ -11,31 +11,31 @@ module TopologicalInventory::AnsibleTower
     require "topological_inventory/ansible_tower/collector/service_catalog"
     include TopologicalInventory::AnsibleTower::Collector::ServiceCatalog
 
-    def initialize(source, tower_hostname, tower_user, tower_passwd, metrics, sleep_poll = 60)
-      super(source, :default_limit => 5)
+    def initialize(source, tower_hostname, tower_user, tower_passwd, metrics, poll_time = 60)
+      super(source, :poll_time => poll_time)
 
       self.connection_manager = TopologicalInventory::AnsibleTower::Connection.new
       self.tower_hostname = tower_hostname
       self.tower_user = tower_user
       self.tower_passwd = tower_passwd
       self.metrics = metrics
-      self.sleep_poll = sleep_poll
     end
 
     def collect!
-      loop do
-        entity_types.each do |entity_type|
-          collector_thread(connection_for_entity_type(entity_type), entity_type)
-        end
+      until finished?
+        ensure_collector_threads
 
-        sleep(sleep_poll)
+        collector_threads.each_value do |thread|
+          thread.join
+        end
+        sleep(poll_time)
       end
     end
 
     private
 
     attr_accessor :connection_manager, :tower_hostname, :tower_user, :tower_passwd,
-                  :metrics, :sleep_poll
+                  :metrics
 
     def endpoint_types
       %w[service_catalog]
@@ -54,11 +54,11 @@ module TopologicalInventory::AnsibleTower
     def collector_thread(connection, entity_type)
       refresh_state_uuid = SecureRandom.uuid
       logger.info("[START] Collecting #{entity_type} with :refresh_state_uuid => '#{refresh_state_uuid}'")
-      parser = TopologicalInventory::AnsibleTower::Parser.new(tower_host: tower_hostname)
+      parser = TopologicalInventory::AnsibleTower::Parser.new(tower_url: tower_hostname)
 
       total_parts = 0
+      sweep_scope = Set.new
       cnt = 0
-
       # each on ansible_tower_client's enumeration makes pagination requests by itself
       send("get_#{entity_type}", connection).each do |entity|
         cnt += 1
@@ -69,9 +69,9 @@ module TopologicalInventory::AnsibleTower
           total_parts += 1
           refresh_state_part_uuid = SecureRandom.uuid
           save_inventory(parser.collections.values, inventory_name, schema_name, refresh_state_uuid, refresh_state_part_uuid)
-
+          sweep_scope.merge(parser.collections.values.map(&:name))
           # re-init
-          parser = TopologicalInventory::AnsibleTower::Parser.new(tower_host: tower_hostname)
+          parser = TopologicalInventory::AnsibleTower::Parser.new(tower_url: tower_hostname)
           cnt = 0
         end
       end
@@ -80,15 +80,16 @@ module TopologicalInventory::AnsibleTower
         total_parts += 1
         refresh_state_part_uuid = SecureRandom.uuid
         save_inventory(parser.collections.values, inventory_name, schema_name, refresh_state_uuid, refresh_state_part_uuid)
+        sweep_scope.merge(parser.collections.values.map(&:name))
       end
 
       logger.info("[END] Collecting #{entity_type} with :refresh_state_uuid => '#{refresh_state_uuid}' - Parts [#{total_parts}]")
 
       # Sweeping inactive records
-
-      logger.info("[START] Sweeping inactive records for #{entity_type} with :refresh_state_uuid => '#{refresh_state_uuid}'...")
-      sweep_inventory(inventory_name, schema_name, refresh_state_uuid, total_parts, parser.collections.inventory_collections_names)
-      logger.info("[END] Sweeping inactive records for #{entity_type} with :refresh_state_uuid => '#{refresh_state_uuid}'")
+      sweep_scope = sweep_scope.to_a
+      logger.info("[START] Sweeping inactive records for #{sweep_scope} with :refresh_state_uuid => '#{refresh_state_uuid}'...")
+      sweep_inventory(inventory_name, schema_name, refresh_state_uuid, total_parts, sweep_scope)
+      logger.info("[END] Sweeping inactive records for #{sweep_scope} with :refresh_state_uuid => '#{refresh_state_uuid}'")
     rescue => e
       metrics.record_error
       logger.error("Error collecting :#{entity_type}, message => #{e.message}")
