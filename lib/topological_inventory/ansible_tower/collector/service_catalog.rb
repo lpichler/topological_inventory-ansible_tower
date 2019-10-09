@@ -1,6 +1,16 @@
 module TopologicalInventory::AnsibleTower
   class Collector
     module ServiceCatalog
+      def get_service_inventories(connection)
+        fnc = lambda do |&block|
+          enumerator = connection.api.inventories.all(:page_size => limits[:service_inventories])
+          enumerator.each do |inventory|
+            block.call(inventory)
+          end
+        end
+        TopologicalInventory::AnsibleTower::Iterator.new(fnc, "Couldn't fetch 'service_inventories' of service catalog.")
+      end
+
       def get_service_offerings(connection)
         fnc = lambda do |&block|
           {:job_template          => connection.api.job_templates.all(:page_size => limits[:service_offerings]),
@@ -17,6 +27,16 @@ module TopologicalInventory::AnsibleTower
         TopologicalInventory::AnsibleTower::Iterator.new(fnc, "Couldn't fetch 'service_offerings' of service catalog.")
       end
 
+      def get_service_offering_nodes(connection)
+        fnc = lambda do |&block|
+          enumerator = connection.api.workflow_job_template_nodes.all(:page_size => limits[:service_offering_nodes])
+          enumerator.each do |service_offering_node|
+            block.call(service_offering_node)
+          end
+        end
+        TopologicalInventory::AnsibleTower::Iterator.new(fnc, "Couldn't fetch 'service_offering_nodes' of service catalog.")
+      end
+
       def get_service_instances(connection)
         fnc = lambda do |&block|
           {:job          => connection.api.jobs.all(:page_size => limits[:service_instances]),
@@ -30,6 +50,16 @@ module TopologicalInventory::AnsibleTower
           end
         end
         TopologicalInventory::AnsibleTower::Iterator.new(fnc, "Couldn't fetch 'service_instances' of service catalog")
+      end
+
+      def get_service_instance_nodes(connection)
+        fnc = lambda do |&block|
+          enumerator = connection.api.workflow_job_nodes.all(:page_size => limits[:service_instance_nodes])
+          enumerator.each do |service_instance_node|
+            block.call(service_instance_node)
+          end
+        end
+        TopologicalInventory::AnsibleTower::Iterator.new(fnc, "Couldn't fetch 'service_instance_nodes' of service catalog.")
       end
 
       # TODO: It seems that each request are sent twice in ansible_tower_client
