@@ -13,6 +13,19 @@ module TopologicalInventory::AnsibleTower
         path         = job.type == 'workflow_job' ? 'workflows' : 'jobs/playbook'
         external_url = File.join(self.tower_url, "/#/#{path}", job.id.to_s)
 
+        extra = {
+          :started  => job.started,
+          :finished => job.finished,
+          :status   => job.status
+        }
+        # launch variables set either manually, by survey values or artifacts from previous job in workflow
+        extra_vars = job.extra_vars_hash
+        extra[:extra_vars] = extra_vars if extra_vars.present?
+        if job.type == 'job'
+          artifacts = job.artifacts.to_s
+          extra[:artifacts] = YAML.safe_load(artifacts) if artifacts.present? && artifacts != '{}' # Artifacts are set by set_stats:data in playbook (Jobs only)
+        end
+
         collections.service_instances.build(
           parse_base_item(job).merge(
             :source_ref       => job.id.to_s,
@@ -21,7 +34,8 @@ module TopologicalInventory::AnsibleTower
             :service_plan          => lazy_find(:service_plans, :source_ref => job.unified_job_template_id.to_s),
             :service_inventory     => service_inventory,
             :root_service_instance => root_service_instance,
-            :external_url          => external_url
+            :external_url          => external_url,
+            :extra                 => extra
           )
         )
       end
