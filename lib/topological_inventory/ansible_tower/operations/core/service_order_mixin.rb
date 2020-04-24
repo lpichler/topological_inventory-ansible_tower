@@ -16,6 +16,7 @@ module TopologicalInventory
             update_task(task_id, :state => "running", :status => "ok")
 
             service_plan          = topology_api_client.show_service_plan(service_plan_id.to_s) if service_plan_id
+
             service_offering_id ||= service_plan.service_offering_id
             service_offering      = topology_api_client.show_service_offering(service_offering_id.to_s)
 
@@ -26,6 +27,7 @@ module TopologicalInventory
 
             logger.info("ServiceOffering#order: Task(id: #{task_id}): Ordering ServiceOffering(id: #{service_offering.id}, source_ref: #{service_offering.source_ref}): Launching Job...")
             job = client.order_service(job_type, service_offering.source_ref, order_params)
+
             logger.info("ServiceOffering#order: Task(id: #{task_id}): Ordering ServiceOffering(id: #{service_offering.id}, source_ref: #{service_offering.source_ref}): Job(:id #{job&.id}) has launched.")
 
             context = {

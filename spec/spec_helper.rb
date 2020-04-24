@@ -6,6 +6,7 @@ require "helpers/applied_inventories/methods"
 
 require "rspec"
 require "webmock/rspec"
+require "timecop"
 
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure

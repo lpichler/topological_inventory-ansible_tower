@@ -1,0 +1,14 @@
+#!/usr/bin/env ruby
+
+$LOAD_PATH << File.expand_path("../lib", __dir__)
+
+require "bundler/setup"
+require "topological_inventory/providers/common/heartbeat"
+
+HEARTBEATS = %w[operations operations-kafka]
+
+exit_status = HEARTBEATS.any? { |name| TopologicalInventory::Providers::Common::Heartbeat.check(name) }
+
+exit_status = exit_status ? 0 : 1
+
+exit exit_status

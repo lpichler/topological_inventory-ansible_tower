@@ -3,17 +3,23 @@ require "topological_inventory/providers/common/collector"
 require "topological_inventory/ansible_tower/connection"
 require "topological_inventory/ansible_tower/parser"
 require "topological_inventory/ansible_tower/iterator"
+require "topological_inventory/providers/common/heartbeat"
 
 module TopologicalInventory::AnsibleTower
   class Collector < TopologicalInventory::Providers::Common::Collector
     include Logging
+    include TopologicalInventory::Providers::Common::HeartbeatQueue
 
     require "topological_inventory/ansible_tower/collector/service_catalog"
     include TopologicalInventory::AnsibleTower::Collector::ServiceCatalog
 
     def initialize(source, tower_hostname, tower_user, tower_passwd, metrics,
-                   poll_time: 60, standalone_mode: true)
-      super(source, :poll_time => poll_time, :standalone_mode => standalone_mode)
+                   poll_time: 60, standalone_mode: true, heartbeat_queue: nil)
+      if standalone_mode
+        heartbeat_queue = heartbeat('collector-standalone')
+      end
+
+      super(source, :poll_time => poll_time, :standalone_mode => standalone_mode, :heartbeat_queue => heartbeat_queue)
 
       self.connection_manager = TopologicalInventory::AnsibleTower::Connection.new
       self.tower_hostname     = tower_hostname
@@ -22,15 +28,27 @@ module TopologicalInventory::AnsibleTower
       self.metrics            = metrics
     end
 
+    def perform_collector_threads
+      ensure_collector_threads
+
+      collector_threads.each_value do |thread|
+        thread.join
+      end
+    end
+
     def collect!
       until finished?
-        ensure_collector_threads
+        if standalone_mode
+          heartbeat_queue.run_in_parallel_with do
+            perform_collector_threads
 
-        collector_threads.each_value do |thread|
-          thread.join
+            sleep(poll_time)
+          end
+        else
+          perform_collector_threads
+
+          stop
         end
-
-        standalone_mode ? sleep(poll_time) : stop
       end
     end
 
@@ -68,8 +86,15 @@ module TopologicalInventory::AnsibleTower
       sweep_scope = Set.new
       cnt = 0
       refresh_state_part_collected_at = nil
-      # each on ansible_tower_client's enumeration makes pagination requests by itself
-      send("get_#{entity_type}", connection).each do |entity|
+
+      heartbeat_thread_method = standalone_mode ? :run_in_parallel_with : :run_thread_queue_in_parallel_with
+      entities = heartbeat_queue.send(heartbeat_thread_method) do
+                   send("get_#{entity_type}", connection)
+                 end
+
+      entities.each do |entity|
+        standalone_mode ? heartbeat_queue.touch_heartbeat_file : heartbeat_queue.queue_tick
+
         refresh_state_part_collected_at = Time.now.utc
         cnt += 1
 

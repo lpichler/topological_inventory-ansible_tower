@@ -1,10 +1,12 @@
 #!/usr/bin/env ruby
 
 $LOAD_PATH << File.expand_path("../lib", __dir__)
+
 require "bundler/setup"
 require "active_support/core_ext/object/blank"
 require "optimist"
 require "topological_inventory/ansible_tower/operations/worker"
+require "topological_inventory/providers/common/heartbeat"
 
 def parse_args
   Optimist.options do
@@ -42,6 +44,15 @@ end
 SourcesApiClient.configure do |config|
   config.scheme = args[:sources_scheme] || "http"
   config.host   = "#{args[:sources_host]}:#{args[:sources_port]}"
+end
+
+ActiveSupport::Notifications.subscribe(/.*heartbeat\.consumer\.kafka.*$/) do |*options|
+  messaging_options = TopologicalInventory::AnsibleTower::Operations::Worker.default_messaging_opts
+  event = ActiveSupport::Notifications::Event.new(*options)
+  if messaging_options[:group_ref] == event.payload[:group_id] && messaging_options[:client_ref] == event.payload[:client_id]
+    heartbeat = TopologicalInventory::Providers::Common::Heartbeat.new("operations-kafka")
+    heartbeat.touch_heartbeat_file
+  end
 end
 
 begin

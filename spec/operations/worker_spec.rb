@@ -23,6 +23,8 @@ RSpec.describe TopologicalInventory::AnsibleTower::Operations::Worker do
         .with(hash_including(:service => operations_topic)).and_yield(message)
       expect(TopologicalInventory::AnsibleTower::Operations::Processor)
         .to receive(:process!).with(message)
+      expect(subject.send(:current_heartbeat)).to receive(:run_thread_with_timeout)
+
       subject.run
     end
   end

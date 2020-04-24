@@ -28,11 +28,11 @@ module TopologicalInventory::AnsibleTower
       missing_data.empty?
     end
 
-    def new_collector(source, secret)
+    def new_collector(source, secret, heartbeat = nil)
       url = URI::Generic.build(:scheme => source.scheme.to_s.strip.presence || 'https',
                                :host   => source.host.to_s.strip,
                                :port   => source.port.to_s.strip)
-      TopologicalInventory::AnsibleTower::Collector.new(source.source, url.to_s, secret["username"], secret["password"], metrics, :standalone_mode => false)
+      TopologicalInventory::AnsibleTower::Collector.new(source.source, url.to_s, secret["username"], secret["password"], metrics, :standalone_mode => false, :heartbeat_queue => heartbeat)
     end
   end
 end
